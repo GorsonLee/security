@@ -14,12 +14,15 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>2.0.0.BUILD-SNAPSHOT</version>
+		<version>1.5.9.RELEASE</version>
 		<relativePath/>
 	</parent>
 
 	<modules>
 		<module>security-demo</module>
+		<module>security-core</module>
+		<module>security-app</module>
+		<module>security-browser</module>
 	</modules>
 
 	<properties>
@@ -27,6 +30,7 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<java.version>1.8</java.version>
 		<spring-cloud.version>Edgware.SR1</spring-cloud.version>
+		<security-version>0.0.1-SNAPSHOT</security-version>
 	</properties>
 
 	<dependencies>
