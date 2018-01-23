@@ -6,8 +6,8 @@ public class ImageCodeProperties extends SmsCodeProperties {
 		setLength(4);
 	}
 	 
-	private int width = 67;
-	private int height = 23;
+	private int width = 60;
+	private int height = 20;
 	
 	public int getWidth() {
 		return width;
