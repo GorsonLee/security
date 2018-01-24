@@ -534,7 +534,7 @@ public class ValidateCodeBeanConfig {
    private SecurityCoreProperties securityCoreProperties;
    
    @Bean
-   @ConditionalOnMissingBean(name = "imageCodeGenerator")
+   @ConditionalOnMissingBean(name = "imageValidateCodeGenerator")
    public ValidateCodeGenerator imageCodeGenerator() {
       ImageCodeGenerator imageCodeGenerator = new ImageCodeGenerator();
       imageCodeGenerator.setSecurityCoreProperties(securityCoreProperties);
@@ -543,7 +543,7 @@ public class ValidateCodeBeanConfig {
 }
 
 //在应用层定义同名字的Component：
-@Component("imageCodeGenerator")
+@Component("imageValidateCodeGenerator")
 public class DemoImageCodeGenerator implements ValidateCodeGenerator {
     @Override
     public ValidateCode generate(ServletWebRequest request) {

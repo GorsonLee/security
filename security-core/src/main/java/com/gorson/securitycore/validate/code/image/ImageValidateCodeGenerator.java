@@ -1,7 +1,7 @@
 package com.gorson.securitycore.validate.code.image;
 
 import com.gorson.securitycore.properties.SecurityCoreProperties;
-import com.gorson.securitycore.validate.code.ValidateCodeGenerator;
+import com.gorson.securitycore.validate.code.model.ValidateCodeGenerator;
 import org.springframework.web.bind.ServletRequestUtils;
 import org.springframework.web.context.request.ServletWebRequest;
 
@@ -9,7 +9,7 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.Random;
 
-public class ImageCodeGenerator implements ValidateCodeGenerator {
+public class ImageValidateCodeGenerator implements ValidateCodeGenerator {
 	private SecurityCoreProperties securityCoreProperties;
 	
 	@Override

@@ -16,8 +16,8 @@ import javax.annotation.Resource;
  * 用户账户密码验证的Bean
  */
 @Component
-public class MyUserDetailService implements UserDetailsService {
-    private Logger logger = LoggerFactory.getLogger(MyUserDetailService.class);
+public class DefaultUserDetailService implements UserDetailsService {
+    private Logger logger = LoggerFactory.getLogger(DefaultUserDetailService.class);
 
     @Resource
     private PasswordEncoder passwordEncoder;

@@ -1,4 +1,4 @@
-package com.gorson.securitybrowser.authentication;
+package com.gorson.securitycore.authentication.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gorson.securitycore.properties.LoginType;
@@ -8,7 +8,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
-import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import javax.servlet.ServletException;
@@ -16,7 +15,8 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
-@Component("gorsonAuthenticationFailureHandlerSelector")
+//@Component("gorsonAuthenticationFailureHandlerSelector")
+//@Component
 public class GorsonAuthenticationFailureHandlerSelector extends SimpleUrlAuthenticationFailureHandler {
     private Logger logger = LoggerFactory.getLogger(GorsonAuthenticationFailureHandlerSelector.class);
 

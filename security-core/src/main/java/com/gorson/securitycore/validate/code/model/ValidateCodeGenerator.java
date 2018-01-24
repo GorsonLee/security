@@ -1,7 +1,4 @@
-/**
- * 
- */
-package com.gorson.securitycore.validate.code;
+package com.gorson.securitycore.validate.code.model;
 
 import org.springframework.web.context.request.ServletWebRequest;
 

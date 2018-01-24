@@ -8,8 +8,6 @@ public class SecurityCoreProperties {
 
     private ValidateCodeProperties code = new ValidateCodeProperties(); //图片和短信的验证属性
 
-    private SocialProperties social = new SocialProperties(); //社交属性
-
     public BrowserProperties getBrowser() {
         return browser;
     }
@@ -24,13 +22,5 @@ public class SecurityCoreProperties {
 
     public void setCode(ValidateCodeProperties code) {
         this.code = code;
-    }
-
-    public SocialProperties getSocial() {
-        return social;
-    }
-
-    public void setSocial(SocialProperties social) {
-        this.social = social;
     }
 }

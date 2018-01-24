@@ -1,6 +1,6 @@
 package com.gorson.securitycore.validate.code.image;
 
-import com.gorson.securitycore.validate.code.ValidateCode;
+import com.gorson.securitycore.validate.code.model.ValidateCode;
 
 import java.awt.image.BufferedImage;
 import java.time.LocalDateTime;

@@ -1,7 +1,4 @@
-/**
- * 
- */
-package com.gorson.securitycore.validate.code;
+package com.gorson.securitycore.validate.code.model;
 
 import java.time.LocalDateTime;
 
