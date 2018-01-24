@@ -552,3 +552,306 @@ public class DemoImageCodeGenerator implements ValidateCodeGenerator {
     }
 }
 ```
+
+
+# 记住我
+原理是验证成功后，RememberMeService一方面将Token写入浏览器的Cookie，另一方面通过TokenRepository将Token写到数据库。当服务再次请求时，首先通过RememberMeAuthenticationFilter，读取Cookie中的Token，然后通过TokenRepository到数据库查找Token信息，最后通过UserDetailsService验证用户信息。
+ 
+配置代码如下：
+```java
+@Configuration
+public class BrowserSecurityConfig extends WebSecurityConfigurerAdapter {
+    private Logger logger = LoggerFactory.getLogger(BrowserSecurityConfig.class);
+
+    @Resource
+    private SecurityCoreProperties securityCoreProperties;
+    @Resource
+    private AuthenticationSuccessHandler gorsonAuthenticationSuccessHandlerSelector; //认证通过的处理器
+    @Resource
+    private AuthenticationFailureHandler gorsonAuthenticationFailureHandlerSelector; //认证失败的处理器
+
+    @Resource
+    private DataSource dataSource; //通信的数据库
+    @Resource
+    private UserDetailsService userDetailsService; //密码校验的Bean
+
+    @Bean
+    public PersistentTokenRepository persistentTokenRepository() {
+        JdbcTokenRepositoryImpl tokenRepository = new JdbcTokenRepositoryImpl();
+        tokenRepository.setDataSource(dataSource);
+//        tokenRepository.setCreateTableOnStartup(true); //启动的时候自动创建表
+        return tokenRepository;
+    }
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        logger.info("Browser Security Config");
+        ValidateCodeFilter validateCodeFilter = new ValidateCodeFilter();
+        validateCodeFilter.setAuthenticationFailureHandler(gorsonAuthenticationFailureHandlerSelector);
+        validateCodeFilter.setSecurityCoreProperties(securityCoreProperties);
+        validateCodeFilter.afterPropertiesSet();
+
+        http.addFilterBefore(validateCodeFilter, UsernamePasswordAuthenticationFilter.class)
+                .formLogin() //表单登陆，指定身份认证的方式
+                .loginPage("/authentication/require") //是否需要身份验证
+                .loginProcessingUrl("/authentication/form") //指定登陆的Action
+                .successHandler(gorsonAuthenticationSuccessHandlerSelector) //登陆成功的处理
+                .failureHandler(gorsonAuthenticationFailureHandlerSelector) //登陆失败的处理
+                .and()
+                .rememberMe()
+                .tokenRepository(persistentTokenRepository()) //配置记住我的数据库
+                .tokenValiditySeconds(securityCoreProperties.getBrowser().getRememberMeSeconds()) //配置Token超时时间
+                .userDetailsService(userDetailsService) //配置Token的密码验证
+                .and()
+                .authorizeRequests() //授权配置
+                .antMatchers("/authentication/require",
+                        securityCoreProperties.getBrowser().getLoginPage(), "/code/image").permitAll() //授权登陆界面
+                .anyRequest() //任何请求
+                .authenticated() //都需要身份认证
+                .and()
+                .csrf().disable(); //禁用csrf防护
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+}
+```
+
+```
+//application.property
+spring.datasource.driver-class-name = com.mysql.jdbc.Driver
+sping.datasource.url= jdbc:mysql://127.0.0.1:3306/security?useUnicode=yes&characterEncoding=UTF-8&useSSL=false
+spring.datasource.username = root
+spring.datasource.password = 123456
+```
+
+# 短信验证
+
+## 1.短信验证接口
+
+和图片验证码的实现逻辑一样：
+
+* 生成验证码；
+* 将验证码写到Session中；
+* 将验证码发送到客户端；
+
+```java
+@RestController
+public class ValidateCodeController {
+    private SessionStrategy sessionStrategy = new HttpSessionSessionStrategy();
+
+    @Resource
+    private ValidateCodeGenerator smsCodeGenerator; //短信验证码的生成器
+    @Resource
+    private SmsCodeSender smsCodeSender;
+
+    @GetMapping("/code/sms")
+    public void createSmsCode(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletRequestBindingException {
+        ValidateCode smsCode = smsCodeGenerator.generate(new ServletWebRequest(request)); //生成校验码
+        sessionStrategy.setAttribute(new ServletWebRequest(request), Constants.SESSION_KEY, smsCode); //设置属性到Session
+        String mobile = ServletRequestUtils.getRequiredStringParameter(request, "mobile"); //获取电话号码
+        smsCodeSender.send(mobile, smsCode.getCode()); //发送手机验证码
+    }
+}
+```
+
+构建发送短信的默认Bean，应用层可以实现自己的Bean：
+```java
+/**
+* 使用者可以重写提供应用层的短信发送器
+* @return 短信发送器
+*/
+@Bean
+@ConditionalOnMissingBean(SmsCodeSender.class)
+public SmsCodeSender smsCodeSender() {
+   return new DefaultSmsCodeSender();
+}
+```
+
+## 2.校验短信验证码并登陆
+
+    
+短信认证需要模仿账户密码校验的方式实现一套独立的验证方式，账户密码的认证流程为：
+UsernamePasswordAuthenticationFilter -> AuthenticationManager -> DaoAuthenticationProvider -> UserDetailsSservice -> UserDetails
+
+（说明：UsernamePasswordAuthenticationFilter 拦截了认证的请求，将用户的账户密码封装成一个未认证的UsernamePasswordAuthenticationToken，并赋给AuthenticationManager，AuthenticationManager会选择一个DaoAuthenticationProvider处理认证请求，选择判断的依据是DaoAuthenticationProvider有方法指定支持处理的Token，DaoAuthenticationProvider调用UserDetailsSservice从数据库中获取用户的信息，和请求的信息进行比较认证，如果认证通过，则将未认证的DaoAuthenticationProvider修改为已认证，并放到Session中）
+
+定义短信的验证方式需要定义组件：Filter，Token，Provide，DetailsService，然后装配起来。
+
+```java
+public class SmsCodeAuthenticationToken extends AbstractAuthenticationToken {
+    private static final long serialVersionUID = SpringSecurityCoreVersion.SERIAL_VERSION_UID;
+    private final Object principal; //认证信息，登陆前存储手机号，认证后存储用户信息
+
+    public SmsCodeAuthenticationToken(Object principal) {
+        super(null);
+        this.principal = principal;
+        this.setAuthenticated(false);
+    }
+
+    /**
+     *
+     * 构造Token
+     * @param principal   电话号码
+     * @param authorities 权限
+     */
+    public SmsCodeAuthenticationToken(Object principal, Collection<? extends GrantedAuthority> authorities) {
+        super(authorities);
+        this.principal = principal;
+        super.setAuthenticated(true);
+    }
+
+    public Object getCredentials() {
+        return null;
+    }
+
+    public Object getPrincipal() {
+        return this.principal;
+    }
+
+    public void setAuthenticated(boolean isAuthenticated) throws IllegalArgumentException {
+        if (isAuthenticated) {
+            throw new IllegalArgumentException("Cannot set this token to trusted - use constructor which takes a GrantedAuthority list instead");
+        } else {
+            super.setAuthenticated(false);
+        }
+    }
+
+    public void eraseCredentials() {
+        super.eraseCredentials();
+    }
+}
+
+
+public class SmsCodeAuthenticationFilter extends AbstractAuthenticationProcessingFilter {
+    private String mobileParameter = Constants.MOBILE_PARAM;
+    private boolean postOnly = true;
+
+    public SmsCodeAuthenticationFilter() {
+        //配置过滤的链接和方法
+        super(new AntPathRequestMatcher(Constants.LOGIN_URL_MOBILE, "POST"));
+    }
+
+    public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
+        //判断请求方法
+        if (postOnly && !request.getMethod().equals("POST")) {
+            throw new AuthenticationServiceException("Authentication method not supported: " + request.getMethod());
+        }
+
+        //获取手机号码
+        String mobile = obtainMobile(request);
+
+        if (mobile == null) {
+            mobile = "";
+        }
+
+        mobile = mobile.trim();
+
+        //构建Token
+        SmsCodeAuthenticationToken authRequest = new SmsCodeAuthenticationToken(mobile);
+
+        //将请求信息传到Token
+        setDetails(request, authRequest);
+
+        //将Token传递给AuthenticationManager
+        return getAuthenticationManager().authenticate(authRequest);
+    }
+
+    protected String obtainMobile(HttpServletRequest request) {
+        return request.getParameter(mobileParameter);
+    }
+
+    protected void setDetails(HttpServletRequest request, SmsCodeAuthenticationToken authRequest) {
+        authRequest.setDetails(authenticationDetailsSource.buildDetails(request));
+    }
+
+    public void setMobileParameter(String mobileParameter) {
+        Assert.hasText(mobileParameter, "Mobile parameter must not be empty or null");
+        this.mobileParameter = mobileParameter;
+    }
+
+    public void setPostOnly(boolean postOnly) {
+        this.postOnly = postOnly;
+    }
+
+    public final String getMobileParameter() {
+        return mobileParameter;
+    }
+}
+
+
+public class SmsCodeAuthenticationProvider implements AuthenticationProvider {
+        private UserDetailsService userDetailsService;
+ 
+    /**
+     * 身份验证逻辑实现
+     *
+     * @param authentication
+     * @return
+     * @throws AuthenticationException
+     */
+    @Override
+    public Authentication authenticate(Authentication authentication) throws AuthenticationException {
+        SmsCodeAuthenticationToken authenticationToken = (SmsCodeAuthenticationToken) authentication;
+
+        //使用手机号码读取用户的信息
+        UserDetails user = userDetailsService.loadUserByUsername((String) authenticationToken.getPrincipal());
+
+        if (user == null) {
+            throw new InternalAuthenticationServiceException("无法获取用户信息");
+        }
+
+        SmsCodeAuthenticationToken authenticationResult = new SmsCodeAuthenticationToken(user, user.getAuthorities());
+        authenticationResult.setDetails(authenticationToken.getDetails());
+        return authenticationResult;
+    }
+
+    /**
+     * 配置支持的Token
+     *
+     * @param aClass
+     * @return
+     */
+    @Override
+    public boolean supports(Class<?> aClass) {
+        return SmsCodeAuthenticationToken.class.isAssignableFrom(aClass);
+    }
+
+    public UserDetailsService getUserDetailsService() {
+        return userDetailsService;
+    }
+
+    public void setUserDetailsService(UserDetailsService userDetailsService) {
+        this.userDetailsService = userDetailsService;
+    }
+}
+
+
+@Component
+public class SmsCodeAuthenticationSecurityConfig extends SecurityConfigurerAdapter<DefaultSecurityFilterChain, HttpSecurity> {
+
+   @Resource
+   private AuthenticationSuccessHandler gorsonAuthenticationSuccessHandlerSelector;
+   @Resource
+   private AuthenticationFailureHandler gorsonAuthenticationFailureHandlerSelector;
+   
+   @Autowired
+   private UserDetailsService userDetailsService;
+   
+   @Override
+   public void configure(HttpSecurity http) throws Exception {
+      SmsCodeAuthenticationFilter smsCodeAuthenticationFilter = new SmsCodeAuthenticationFilter();
+      smsCodeAuthenticationFilter.setAuthenticationManager(http.getSharedObject(AuthenticationManager.class));
+      smsCodeAuthenticationFilter.setAuthenticationSuccessHandler(gorsonAuthenticationSuccessHandlerSelector);
+      smsCodeAuthenticationFilter.setAuthenticationFailureHandler(gorsonAuthenticationFailureHandlerSelector);
+      
+      SmsCodeAuthenticationProvider smsCodeAuthenticationProvider = new SmsCodeAuthenticationProvider();
+      smsCodeAuthenticationProvider.setUserDetailsService(userDetailsService);
+      
+      http.authenticationProvider(smsCodeAuthenticationProvider)
+         .addFilterAfter(smsCodeAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+   }
+}
+```
